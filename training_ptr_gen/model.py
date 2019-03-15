@@ -9,6 +9,9 @@ from numpy import random
 
 use_cuda = config.use_gpu and torch.cuda.is_available()
 
+device = torch.device("cuda:0" if (torch.cuda.is_available() and config.use_gpu) else "cpu")
+print(device)
+
 random.seed(123)
 torch.manual_seed(123)
 if torch.cuda.is_available():
@@ -53,10 +56,21 @@ class Encoder(nn.Module):
     #seq_lens should be in descending order
     def forward(self, input, seq_lens):
         # embedded = self.embedding(input)
-        embedded = input
+        # embedded = input
 
-        packed = pack_padded_sequence(embedded, seq_lens, batch_first=True)
+        # packed = pack_padded_sequence(embedded, seq_lens, batch_first=True)
+        # output, hidden = self.lstm(packed)
+
+        # ====
+        input = input.to(device)
+        input = input.type(torch.FloatTensor)
+
+        packed = pack_padded_sequence(input, seq_lens, batch_first=True)
+
+        packed = packed.to(device)
         output, hidden = self.lstm(packed)
+
+        # =====
 
         encoder_outputs, _ = pad_packed_sequence(output, batch_first=True)  # h dim = B x t_k x n
         encoder_outputs = encoder_outputs.contiguous()
@@ -158,8 +172,13 @@ class Decoder(nn.Module):
                                                               enc_padding_mask, coverage)
             coverage = coverage_next
 
-        y_t_1_embd = y_t_1
-        x = self.x_context(torch.cat((c_t_1, y_t_1_embd), 1))
+        # y_t_1_embd = y_t_1
+        y_t_1 = y_t_1.to(device)
+        c_t_1 = c_t_1.to(device)
+        m = torch.cat((c_t_1, y_t_1), 1)
+        m = m.to(device)
+        x = self.x_context(m)
+        #x.to(device)
         lstm_out, s_t = self.lstm(x.unsqueeze(1), s_t_1)
 
         h_decoder, c_decoder = s_t
@@ -225,4 +244,3 @@ class Model(object):
             self.encoder.load_state_dict(state['encoder_state_dict'])
             self.decoder.load_state_dict(state['decoder_state_dict'], strict=False)
             self.reduce_state.load_state_dict(state['reduce_state_dict'])
-

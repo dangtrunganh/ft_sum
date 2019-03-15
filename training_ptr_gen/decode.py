@@ -20,12 +20,17 @@ from model import Model
 from data_util.utils import write_for_rouge, rouge_eval, rouge_log
 from train_util import get_input_from_batch
 from data_util.data import myid2word, outputids2words
+import gensim.models.keyedvectors as word2vec
+from data_util.config import emb_dim
+import numpy as np
 
-from pyfasttext import FastText
-ft_model = FastText(config.fasttext_path)
+# from pyfasttext import FastText
+# ft_model = FastText(config.w2v)
+w2vec = word2vec.KeyedVectors.load_word2vec_format(config.w2v, binary=True)
 
 
 use_cuda = config.use_gpu and torch.cuda.is_available()
+unknown_decoding_embedd = np.random.uniform(-0.01, 0.01, (emb_dim,))
 
 class Beam(object):
   def __init__(self, tokens, log_probs, state, context, coverage):
@@ -117,12 +122,15 @@ class BeamSearch(object):
         article_oovs, enc_batch, enc_padding_mask, enc_lens, enc_batch_extend_vocab, extra_zeros, c_t_0, coverage_t_0 = \
             get_input_from_batch(batch, use_cuda)
 
-        enc_batch = [outputids2words(ids,self.vocab,article_oovs[i]) for i,ids in enumerate(enc_batch.numpy())]
+        enc_batch = [outputids2words(ids,self.vocab,article_oovs[i]) for i,ids in enumerate(enc_batch.cpu().numpy())]
         enc_batch_list = []
         for words in enc_batch:
             temp_list = []
             for w in words:
-                l = ft_model.get_numpy_vector(w)
+                try:
+                    l = w2vec.get_vector(w)
+                except:
+                    l = unknown_decoding_embedd
                 temp_list.append(l)
             enc_batch_list.append(temp_list)
         enc_batch_list = torch.Tensor(enc_batch_list)
@@ -172,8 +180,20 @@ class BeamSearch(object):
                     all_coverage.append(h.coverage)
                 coverage_t_1 = torch.stack(all_coverage, 0)
 
-            y_t_1 = [myid2word(id, self.vocab, article_oovs[i]) for i, id in enumerate(y_t_1.numpy())]
-            y_t_1 = torch.Tensor([ft_model.get_numpy_vector(w) for w in y_t_1])
+            y_t_1 = [myid2word(id, self.vocab, article_oovs[i]) for i, id in enumerate(y_t_1.cpu().numpy())]
+
+            # ======
+            xx = []
+            for w in y_t_1:
+                try:
+                    ll = w2vec.get_vector(w)
+                    xx.append(ll)
+                except:
+                    lll = unknown_decoding_embedd
+                    xx.append(lll)
+
+            y_t_1 = torch.Tensor(xx)
+            # ======
             final_dist, s_t, c_t, attn_dist, p_gen, coverage_t = self.model.decoder(y_t_1, s_t_1,
                                                         encoder_outputs, encoder_feature, enc_padding_mask, c_t_1,
                                                         extra_zeros, enc_batch_extend_vocab, coverage_t_1, steps)
@@ -223,6 +243,3 @@ if __name__ == '__main__':
     model_filename = sys.argv[1]
     beam_Search_processor = BeamSearch(model_filename)
     beam_Search_processor.decode()
-
-
-

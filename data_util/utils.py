@@ -3,6 +3,8 @@ import os
 import pyrouge
 import logging
 import tensorflow as tf
+import numpy as np
+import torch
 
 def print_results(article, abstract, decoded_output):
   print ("")
@@ -93,3 +95,16 @@ def write_for_rouge(original_articles, reference_sents, decoded_words, ex_index,
   with open(art_file, "w") as f:
       f.write(original_articles[0])
   #print("Wrote example %i to file" % ex_index)
+
+
+def convert_list_to_tensor(l):
+  l = np.array(l)
+  tensorX = torch.zeros(l.shape)
+  for i in xrange(len(tensorX)):
+    for j in xrange(len(tensorX[i])):
+      try:
+        tensorX[i, j] = torch.Tensor(l[i, j])
+      except Exception as e:
+        print(e.message)
+
+  return tensorX
